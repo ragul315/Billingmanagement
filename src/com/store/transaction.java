@@ -57,15 +57,13 @@ public class transaction {
 
     @Override
     public String toString() {
-        String ret = "transactionId=" + transactionId +
+        return "transaction{" +
+                "transactionId=" + transactionId +
                 ", totalAmount=" + totalAmount +
                 ", vendor='" + vendor + '\'' +
                 ", transactionDate=" + transactionDate +
-                ", shares=" ;
-        for (int i = 0; i < shareCount; i++) {
-            ret = ret + shares[i];
-        }
-        return ret;
+                ", shares=" + Arrays.toString(shares) +
+                '}';
     }
 
     public void setShares(share[] shares) {

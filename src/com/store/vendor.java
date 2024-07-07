@@ -191,7 +191,7 @@ public class vendor {
             }
     
             // Update transactions table by subtracting the bill amount
-            String updateTransactionSql = "UPDATE transaction SET amount = amount - ? WHERE vendor = ?";
+            String updateTransactionSql = "UPDATE transaction SET amount = totalamount - ? WHERE vendor = ?";
             try (PreparedStatement stmt = con.prepareStatement(updateTransactionSql)) {
                 stmt.setFloat(1, billAmount);
                 stmt.setString(2, name);
@@ -386,6 +386,7 @@ public class vendor {
             db.closecon();
         }
         getTransactionsFromDB();
+        getBillsFromDB();
     }
 
     private void insertShare(transaction newTransaction, Connection con) throws SQLException {

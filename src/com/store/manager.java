@@ -130,18 +130,18 @@ public class manager {
     public void showAllTransactions() {
         dbcon db = new dbcon();
         Connection con = db.getConnection();
-        String sql = "SELECT transactionid, transactiondate, amount, billid, vendorname FROM transaction";
+        String sql = "SELECT transactionid, transactiondate, totalamount, vendor FROM transaction";
 
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             ResultSet rs = stmt.executeQuery();
             while (rs.next()) {
                 int transactionId = rs.getInt("transactionid");
                 Date transactionDate = rs.getDate("transactiondate");
-                float amount = rs.getFloat("amount");
-                int billId = rs.getInt("billid");
-                String vendorName = rs.getString("vendorname");
+                float amount = rs.getFloat("totalamount");
 
-                System.out.println("Transaction ID:"+ transactionId + ", Date: " + transactionDate +", Amount: " + amount + ", Bill ID: " + billId + ", Vendor Name: " + vendorName);
+                String vendorName = rs.getString("vendor");
+
+                System.out.println("Transaction ID:"+ transactionId + ", Date: " + transactionDate +", Amount: " + amount + ", Vendor Name: " + vendorName);
             }
         } catch (SQLException e) {
             e.printStackTrace();
@@ -154,7 +154,7 @@ public class manager {
     public void showAllTransactions(Date startDate, Date endDate) {
         dbcon db = new dbcon();
         Connection con = db.getConnection();
-        String sql = "SELECT transactionid, transactiondate, amount, billid, vendorname FROM transaction WHERE transactiondate BETWEEN ? AND ?";
+        String sql = "SELECT transactionid, transactiondate, totalamount, vendor FROM transaction WHERE transactiondate BETWEEN ? AND ?";
 
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setDate(1, new java.sql.Date(startDate.getTime()));
@@ -163,11 +163,11 @@ public class manager {
             while (rs.next()) {
                 int transactionId = rs.getInt("transactionid");
                 Date transactionDate = rs.getDate("transactiondate");
-                float amount = rs.getFloat("amount");
-                int billId = rs.getInt("billid");
-                String vendorName = rs.getString("vendorname");
+                float amount = rs.getFloat("totalamount");
 
-                System.out.println("Transaction ID: " + transactionId + ", Date: " + transactionDate +", Amount: " + amount + ", Bill ID: " + billId + ", Vendor Name: " + vendorName);
+                String vendorName = rs.getString("vendor");
+
+                System.out.println("Transaction ID: " + transactionId + ", Date: " + transactionDate +", Amount: " + amount +  ", Vendor Name: " + vendorName);
             }
         } catch (SQLException e) {
             e.printStackTrace();
@@ -193,12 +193,12 @@ public class manager {
     public void findTopPaidVendor() {
         dbcon db = new dbcon();
         Connection con = db.getConnection();
-        String sql = "SELECT vendorname, SUM(amount) AS totalAmount FROM transaction GROUP BY vendorname ORDER BY totalAmount DESC LIMIT 1";
+        String sql = "SELECT vendor, SUM(totalamount) AS totalAmount FROM transaction GROUP BY vendor ORDER BY totalAmount DESC LIMIT 1";
 
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             ResultSet rs = stmt.executeQuery();
             if (rs.next()) {
-                String vendorName = rs.getString("vendorname");
+                String vendorName = rs.getString("vendor");
                 float totalAmount = rs.getFloat("totalAmount");
 
                 System.out.println("\nTop Paid Vendor: " + vendorName + " Total Amount: " + totalAmount);
