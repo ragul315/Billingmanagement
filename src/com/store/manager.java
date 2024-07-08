@@ -7,117 +7,88 @@ import java.util.*;
 import com.dbcon.dbcon;
 
 public class manager {
-    private vendor[] vendors;
-    private int n;
+    private dbcon db;
+    private Connection con;
 
     public manager() {
-        vendors = new vendor[10];
-        n = 0;
-        getVendorsFromDB();
+        db = new dbcon();
+        con = db.getConnection();
     }
 
-    public void getVendorsFromDB() {
-        n = 0;
-        dbcon db = new dbcon();
-        Connection con = db.getConnection();
-        String sql = "SELECT id, vendorname FROM vendors;";
+    /* Operation on vendors */
+    public void displayVendors() {
+
+        String sql = "SELECT id, vendorname, pendingamount FROM vendors;";
 
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             ResultSet rs = stmt.executeQuery();
             while (rs.next()) {
                 int id = rs.getInt("id");
                 String vendorName = rs.getString("vendorname");
-
-                vendor v = new vendor(id, vendorName);
-
-                if (n == vendors.length) {
-                    vendors = resizearray(vendors, vendors.length * 2);
-                }
-                vendors[n++] = v;
+                float pendingAmount = rs.getFloat("pendingamount");
+                System.out.println(id + ", " + vendorName + ", " + pendingAmount);
             }
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            db.closecon();
         }
     }
 
-    private vendor[] resizearray(vendor[] array, int newSize) {
-        vendor[] newArray = new vendor[newSize];
-        System.arraycopy(array, 0, newArray, 0, array.length);
-        return newArray;
-    }
-
-    public void displayVendors() {
-        System.out.println("Vendors List");
-        for (int i = 0; i < n; i++) {
-            System.out.println(vendors[i].getVendorId() + ": " + vendors[i].getName());
-        }
-    }
-
-    public void addVendor(String vendorName) {
-        dbcon db = new dbcon();
-        Connection con = db.getConnection();
+    public void addVendor(String vname) {
         String sql = "INSERT INTO vendors (vendorname) VALUES (?)";
 
         try (PreparedStatement stmt = con.prepareStatement(sql, PreparedStatement.RETURN_GENERATED_KEYS)) {
-            stmt.setString(1, vendorName);
+            stmt.setString(1, vname);
             stmt.executeUpdate();
 
             ResultSet rs = stmt.getGeneratedKeys();
             if (rs.next()) {
                 int id = rs.getInt(1);
-                vendor v = new vendor(id, vendorName);
-
-                if (n == vendors.length) {
-                    vendors = resizearray(vendors, vendors.length * 2);
-                }
-                vendors[n++] = v;
+                System.out.println("New Vendor Added Successfully\nVendor Name:" + vname + " id:" + id);
             }
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            db.closecon();
         }
     }
 
     public void deleteVendor(int id) {
-        dbcon db = new dbcon();
-        Connection con = db.getConnection();
-        String sql = "DELETE FROM vendors WHERE id = ?";
+        vendor nvendor = null;
+        String sql = "SELECT vendorname FROM vendors WHERE id = ? ;";
+
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, id);
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                String vname = rs.getString("vendorname");
+                nvendor = new vendor(id, vname);
+                nvendor.delete();
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        sql = "DELETE FROM vendors WHERE id = ?";
 
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setInt(1, id);
             stmt.executeUpdate();
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            db.closecon();
         }
-
-        int i;
-        for (i = 0; i < n; i++) {
-            if (vendors[i].getVendorId() == id) {
-                vendors[i].delete();
-
-                break;
-            }
-        }
-
-        for (; i < n - 1; i++) {
-            vendors[i] = vendors[i + 1];
-        }
-        vendors[--n] = null;
-
     }
 
     public void selectVendor(int id) {
         vendor nvendor = null;
-        for (int i = 0; i < n; i++) {
-            if (vendors[i].getVendorId() == id) {
-                nvendor = vendors[i];
-                break;
+        String sql = "SELECT vendorname FROM vendors WHERE id = ? ;";
+
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, id);
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                String vname = rs.getString("vendorname");
+                nvendor = new vendor(id, vname);
             }
+        } catch (SQLException e) {
+            e.printStackTrace();
         }
 
         if (nvendor != null) {
@@ -128,51 +99,44 @@ public class manager {
     }
 
     public void showAllTransactions() {
-        dbcon db = new dbcon();
-        Connection con = db.getConnection();
         String sql = "SELECT transactionid, transactiondate, totalamount, vendor FROM transaction";
 
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             ResultSet rs = stmt.executeQuery();
             while (rs.next()) {
-                int transactionId = rs.getInt("transactionid");
-                Date transactionDate = rs.getDate("transactiondate");
+                int id = rs.getInt("transactionid");
+                Date day = rs.getDate("transactiondate");
                 float amount = rs.getFloat("totalamount");
+                String vname = rs.getString("vendor");
 
-                String vendorName = rs.getString("vendor");
-
-                System.out.println("Transaction ID:"+ transactionId + ", Date: " + transactionDate +", Amount: " + amount + ", Vendor Name: " + vendorName);
+                System.out.println("Transaction ID:" + id + ", Date: " + day + ", Amount: "
+                        + amount + ", Vendor Name: " + vname);
             }
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            db.closecon();
         }
     }
 
+    /* Operation on Transaction */
     // Function to show transactions by date range for all vendors
-    public void showAllTransactions(Date startDate, Date endDate) {
-        dbcon db = new dbcon();
-        Connection con = db.getConnection();
+    public void showAllTransactions(Date sdate, Date edate) {
         String sql = "SELECT transactionid, transactiondate, totalamount, vendor FROM transaction WHERE transactiondate BETWEEN ? AND ?";
 
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
-            stmt.setDate(1, new java.sql.Date(startDate.getTime()));
-            stmt.setDate(2, new java.sql.Date(endDate.getTime()));
+            stmt.setDate(1, new java.sql.Date(sdate.getTime()));
+            stmt.setDate(2, new java.sql.Date(edate.getTime()));
             ResultSet rs = stmt.executeQuery();
             while (rs.next()) {
-                int transactionId = rs.getInt("transactionid");
-                Date transactionDate = rs.getDate("transactiondate");
+                int id = rs.getInt("transactionid");
+                Date day = rs.getDate("transactiondate");
                 float amount = rs.getFloat("totalamount");
+                String vname = rs.getString("vendor");
 
-                String vendorName = rs.getString("vendor");
-
-                System.out.println("Transaction ID: " + transactionId + ", Date: " + transactionDate +", Amount: " + amount +  ", Vendor Name: " + vendorName);
+                System.out.println("Transaction ID: " + id + ", Date: " + day + ", Amount: "
+                        + amount + ", Vendor Name: " + vname);
             }
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            db.closecon();
         }
     }
 
@@ -181,34 +145,29 @@ public class manager {
         Calendar calendar = Calendar.getInstance();
         calendar.add(Calendar.MONTH, -1);
         calendar.set(Calendar.DAY_OF_MONTH, 1);
-        Date startDate = (Date) calendar.getTime();
+        Date sdate = new Date(calendar.getTimeInMillis());
 
         calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH));
-        Date endDate = (Date) calendar.getTime();
+        Date edate = new Date(calendar.getTimeInMillis());
 
-        showAllTransactions(startDate, endDate);
+        showAllTransactions(sdate, edate);
     }
 
-    // Function to find the top paid vendor
     public void findTopPaidVendor() {
-        dbcon db = new dbcon();
-        Connection con = db.getConnection();
         String sql = "SELECT vendor, SUM(totalamount) AS totalAmount FROM transaction GROUP BY vendor ORDER BY totalAmount DESC LIMIT 1";
 
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             ResultSet rs = stmt.executeQuery();
             if (rs.next()) {
-                String vendorName = rs.getString("vendor");
+                String vname = rs.getString("vendor");
                 float totalAmount = rs.getFloat("totalAmount");
 
-                System.out.println("\nTop Paid Vendor: " + vendorName + " Total Amount: " + totalAmount);
+                System.out.println("\nTop Paid Vendor: " + vname + " Total Amount: " + totalAmount);
             } else {
                 System.out.println("\nNo vendors found.");
             }
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            db.closecon();
         }
     }
 
@@ -226,7 +185,7 @@ public class manager {
             System.out.println("7) Show transactions of previous month");
             System.out.println("8) Find top paid vendor");
             System.out.println("9) Exit");
-    
+
             int ch = in.nextInt();
             switch (ch) {
                 case 1:
@@ -234,31 +193,31 @@ public class manager {
                     break;
                 case 2:
                     System.out.print("Enter vendor name: ");
-                    String vendorName = in.next();
-                    addVendor(vendorName);
+                    String vname = in.next();
+                    addVendor(vname);
                     System.out.println("Vendor added successfully.");
                     break;
                 case 3:
                     System.out.print("Enter vendor ID to delete: ");
-                    int vendorIdToDelete = in.nextInt();
-                    deleteVendor(vendorIdToDelete);
+                    int vid = in.nextInt();
+                    deleteVendor(vid);
                     System.out.println("Vendor deleted successfully.");
                     break;
                 case 4:
                     System.out.print("Enter vendor ID to select: ");
-                    int vendorIdToSelect = in.nextInt();
-                    selectVendor(vendorIdToSelect);
+                    int vids = in.nextInt();
+                    selectVendor(vids);
                     break;
                 case 5:
                     showAllTransactions();
                     break;
                 case 6:
                     System.out.print("Enter start date (YYYY-MM-DD): ");
-                    String startDateStr = in.next();
+                    String sdatestr = in.next();
                     System.out.print("Enter end date (YYYY-MM-DD): ");
-                    String endDateStr = in.next();
-                    Date sdate = java.sql.Date.valueOf(startDateStr);
-                    Date edate = java.sql.Date.valueOf(endDateStr);
+                    String edatestr = in.next();
+                    Date sdate = java.sql.Date.valueOf(sdatestr);
+                    Date edate = java.sql.Date.valueOf(edatestr);
                     showAllTransactions(sdate, edate);
                     break;
                 case 7:
@@ -269,6 +228,7 @@ public class manager {
                     break;
                 case 9:
                     loop = false;
+                    db.closecon();
                     System.out.println("Exiting manager menu.");
                     break;
                 default:
@@ -278,5 +238,4 @@ public class manager {
         }
         in.close();
     }
-    
 }

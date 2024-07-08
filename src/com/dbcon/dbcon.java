@@ -8,7 +8,8 @@ public class dbcon {
     private static final String PASSWORD = "asdf";
 
     public Connection con;
-    //Connecting Database
+
+    // Connecting Database
     public dbcon() {
         try {
             Class.forName("com.mysql.jdbc.Driver");

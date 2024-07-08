@@ -52,11 +52,10 @@ public class bill {
 
     @Override
     public String toString() {
-        return
-                "billid=" + billid +
+        return "billid=" + billid +
                 ", amount=" + amount +
                 ", pendingAmount=" + pendingAmount +
                 ", billDate=" + billDate +
-                ", vendor=" + vendor ;
+                ", vendor=" + vendor;
     }
 }

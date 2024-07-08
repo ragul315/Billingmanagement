@@ -27,6 +27,6 @@ public class share {
 
     @Override
     public String toString() {
-        return "Bill ID: " + billId + ", Amount: " + amount+"\n";
+        return "Bill ID: " + billId + ", Amount: " + amount + "\n";
     }
 }

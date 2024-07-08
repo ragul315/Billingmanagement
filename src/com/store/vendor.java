@@ -2,42 +2,27 @@ package com.store;
 
 import java.sql.*;
 import java.sql.Date;
-import java.text.*;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.*;
+
 import com.dbcon.dbcon;
 
 public class vendor {
+    private dbcon db = new dbcon();
+    private Connection con = db.getConnection();
     private int vendorId;
     private String name;
-    private double pendingAmount;
-    private bill[] bills;
-    private int billCount;
+    private double pendingAmount = 0.0;
 
-    public void setBills(bill[] bills) {
-        this.bills = bills;
+    public vendor() {
+        updatePendingAmount();
     }
-
-    public transaction[] getTransactions() {
-        return transactions;
-    }
-
-    public void setTransactions(transaction[] transactions) {
-        this.transactions = transactions;
-    }
-
-    private transaction[] transactions;
-    private int transactionCount;
 
     public vendor(int vendorId, String name) {
         this.vendorId = vendorId;
         this.name = name;
-        pendingAmount = 0.0;
-        bills = new bill[10];
-        billCount = 0;
-        transactions = new transaction[10]; 
-        transactionCount = 0;
-        getBillsFromDB();
-        getTransactionsFromDB();
+        updatePendingAmount();
     }
 
     public int getVendorId() {
@@ -64,339 +49,238 @@ public class vendor {
         this.pendingAmount = pendingAmount;
     }
 
-    public bill[] getBills() {
-        getBillsFromDB();
-        return bills;
+    public void updatePendingAmount() {
+        String sumSql = "SELECT COALESCE(SUM(pendingamount), 0) AS totalPending FROM bill WHERE vendor = ?";
+        String updateSql = "UPDATE vendors SET pendingamount = ? WHERE vendorname = ?";
+
+        try (PreparedStatement sumStmt = con.prepareStatement(sumSql);
+             PreparedStatement updateStmt = con.prepareStatement(updateSql)) {
+
+            sumStmt.setString(1, this.name);
+            ResultSet rs = sumStmt.executeQuery();
+
+            if (rs.next()) {
+                double totalPending = rs.getDouble("totalPending");
+                setPendingAmount(totalPending);
+
+                updateStmt.setDouble(1, totalPending);
+                updateStmt.setString(2, this.name);
+                updateStmt.executeUpdate();
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
     }
 
-    public void getBillsFromDB() {
-        billCount = 0;
-        dbcon db = new dbcon();
-        Connection con = db.getConnection();
+    public void displayBills() {
         String sql = "SELECT billid, amount, pendingamount, billdate, vendor FROM bill WHERE vendor = ?";
-
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setString(1, this.name);
 
             ResultSet rs = stmt.executeQuery();
             while (rs.next()) {
-                bill bill = new bill();
-                bill.setBillid(rs.getInt("billid"));
-                bill.setAmount(rs.getFloat("amount"));
-                bill.setPendingAmount(rs.getFloat("pendingamount"));
-                bill.setBillDate(rs.getDate("billdate"));
-                bill.setVendor(rs.getString("vendor"));
-
-                if (billCount == bills.length) {
-                    bills = resizeArray(bills, bills.length * 2);
-                }
-                bills[billCount++] = bill;
+                bill nbill = new bill();
+                nbill.setBillid(rs.getInt("billid"));
+                nbill.setAmount(rs.getFloat("amount"));
+                nbill.setPendingAmount(rs.getFloat("pendingamount"));
+                nbill.setBillDate(rs.getDate("billdate"));
+                nbill.setVendor(rs.getString("vendor"));
+                System.out.println(nbill);
             }
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            db.closecon();
         }
-
-        updatePendingAmount();
-    }
-
-    private void updatePendingAmount() {
-        double totalPending = 0.0;
-        for (int i = 0; i < billCount; i++) {
-            totalPending += bills[i].getPendingAmount();
-        }
-        setPendingAmount(totalPending);
     }
 
     public void delete() {
-        dbcon db = new dbcon();
-        Connection con = db.getConnection();
-        String sql = "DELETE FROM bill WHERE vendor = ?";
-
-        try (PreparedStatement stmt = con.prepareStatement(sql)) {
-            stmt.setString(1, this.name);
-            stmt.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            db.closecon();
-        }
-    }
-
-    public void addBill(bill newBill) {
-        dbcon db = new dbcon();
-        Connection con = db.getConnection();
-        String sql = "INSERT INTO bill (amount, pendingamount, billdate, vendor) VALUES (?, ?, ?, ?)";
-        String generatedColumns[] = { "billid" };
-
-        try (PreparedStatement stmt = con.prepareStatement(sql, generatedColumns)) {
-            stmt.setFloat(1, newBill.getAmount());
-            stmt.setFloat(2, newBill.getPendingAmount());
-            stmt.setDate(3, new java.sql.Date(newBill.getBillDate().getTime()));
-            stmt.setString(4, this.name);
-            stmt.executeUpdate();
-
-            // Retrieve the generated billid
-            ResultSet rs = stmt.getGeneratedKeys();
-            if (rs.next()) {
-                int billId = rs.getInt(1);
-                newBill.setBillid(billId);
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            db.closecon();
-        }
-
-        if (billCount == bills.length) {
-            bills = resizeArray(bills, billCount * 2);
-        }
-        bills[billCount++] = newBill;
-        updatePendingAmount();
-    }
-
-    public void deleteBill(int billId) {
-        dbcon db = new dbcon();
-        Connection con = db.getConnection();
-    
         try {
-            con.setAutoCommit(false); // Start transaction
-    
-            // Retrieve the amount of the bill to be deleted
-            String getBillAmountSql = "SELECT amount FROM bill WHERE billid = ?";
-            float billAmount = 0;
-            
-            try (PreparedStatement stmt = con.prepareStatement(getBillAmountSql)) {
-                stmt.setInt(1, billId);
-                ResultSet rs = stmt.executeQuery();
-                if (rs.next()) {
-                    billAmount = rs.getFloat("amount");
-                }
-            }
-    
-            // Delete from share table
-            String deleteShareSql = "DELETE FROM share WHERE billid = ?";
-            try (PreparedStatement stmt = con.prepareStatement(deleteShareSql)) {
-                stmt.setInt(1, billId);
+            con.setAutoCommit(false);
+
+            String sql = "DELETE FROM share WHERE billid IN (SELECT billid FROM bill WHERE vendor = ?)";
+            try (PreparedStatement stmt = con.prepareStatement(sql)) {
+                stmt.setString(1, this.name);
                 stmt.executeUpdate();
             }
-    
-            // Delete from bill table
-            String deleteBillSql = "DELETE FROM bill WHERE billid = ? AND vendor = ?";
-            try (PreparedStatement stmt = con.prepareStatement(deleteBillSql)) {
-                stmt.setInt(1, billId);
-                stmt.setString(2, name);
+
+            sql = "DELETE FROM bill WHERE vendor = ?";
+            try (PreparedStatement stmt = con.prepareStatement(sql)) {
+                stmt.setString(1, this.name);
                 stmt.executeUpdate();
             }
-    
-            // Update transactions table by subtracting the bill amount
-            String updateTransactionSql = "UPDATE transaction SET amount = totalamount - ? WHERE vendor = ?";
-            try (PreparedStatement stmt = con.prepareStatement(updateTransactionSql)) {
-                stmt.setFloat(1, billAmount);
-                stmt.setString(2, name);
+
+            sql = "DELETE FROM transaction WHERE vendor = ?";
+            try (PreparedStatement stmt = con.prepareStatement(sql)) {
+                stmt.setString(1, this.name);
                 stmt.executeUpdate();
             }
-    
-            con.commit(); // Commit transaction
+
+            sql = "DELETE FROM vendors WHERE vendorname = ?";
+            try (PreparedStatement stmt = con.prepareStatement(sql)) {
+                stmt.setString(1, this.name);
+                stmt.executeUpdate();
+            }
+
+            con.commit();
         } catch (SQLException e) {
             try {
-                con.rollback(); // Rollback transaction in case of error
+                con.rollback();
             } catch (SQLException rollbackEx) {
                 rollbackEx.printStackTrace();
             }
             e.printStackTrace();
         } finally {
             try {
-                con.setAutoCommit(true); // Restore default auto-commit mode
-                db.closecon();
+                con.setAutoCommit(true);
             } catch (SQLException e) {
                 e.printStackTrace();
             }
         }
-    
-        int index = -1;
-        for (int i = 0; i < billCount; i++) {
-            if (bills[i].getBillid() == billId) {
-                index = i;
-                break;
+    }
+
+    public void addBill(bill nbill) {
+        String sql = "INSERT INTO bill (amount, pendingamount, billdate, vendor) VALUES (?, ?, ?, ?)";
+        String generatedColumns[] = { "billid" };
+        try (PreparedStatement stmt = con.prepareStatement(sql, generatedColumns)) {
+            stmt.setFloat(1, nbill.getAmount());
+            stmt.setFloat(2, nbill.getPendingAmount());
+            stmt.setDate(3, new java.sql.Date(nbill.getBillDate().getTime()));
+            stmt.setString(4, this.name);
+            stmt.executeUpdate();
+
+            ResultSet rs = stmt.getGeneratedKeys();
+            if (rs.next()) {
+                int billId = rs.getInt(1);
+                nbill.setBillid(billId);
+                setPendingAmount(getPendingAmount() + nbill.getPendingAmount());
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void deleteBill(int billId) {
+        try {
+            con.setAutoCommit(false);
+
+            String sql = "SELECT amount FROM bill WHERE billid = ?";
+            float billAmount = 0;
+
+            try (PreparedStatement stmt = con.prepareStatement(sql)) {
+                stmt.setInt(1, billId);
+                ResultSet rs = stmt.executeQuery();
+                if (rs.next()) {
+                    billAmount = rs.getFloat("amount");
+                }
+            }
+
+            sql = "DELETE FROM share WHERE billid = ?";
+            try (PreparedStatement stmt = con.prepareStatement(sql)) {
+                stmt.setInt(1, billId);
+                stmt.executeUpdate();
+            }
+
+            sql = "DELETE FROM bill WHERE billid = ? AND vendor = ?";
+            try (PreparedStatement stmt = con.prepareStatement(sql)) {
+                stmt.setInt(1, billId);
+                stmt.setString(2, name);
+                stmt.executeUpdate();
+            }
+
+            sql = "UPDATE transaction SET totalamount = totalamount - ? WHERE vendor = ?";
+            try (PreparedStatement stmt = con.prepareStatement(sql)) {
+                stmt.setFloat(1, billAmount);
+                stmt.setString(2, name);
+                stmt.executeUpdate();
+            }
+
+            con.commit();
+        } catch (SQLException e) {
+            try {
+                con.rollback();
+            } catch (SQLException rollbackEx) {
+                rollbackEx.printStackTrace();
+            }
+            e.printStackTrace();
+        } finally {
+            try {
+                con.setAutoCommit(true);
+            } catch (SQLException e) {
+                e.printStackTrace();
             }
         }
-    
-        if (index != -1) {
-            for (int i = index; i < billCount - 1; i++) {
-                bills[i] = bills[i + 1];
-            }
-            bills[--billCount] = null;
-        }
-    
         updatePendingAmount();
     }
-    
-    private bill[] resizeArray(bill[] array, int newSize) {
-        bill[] newArray = new bill[newSize];
-        System.arraycopy(array, 0, newArray, 0, array.length);
-        return newArray;
-    }
 
-    private transaction[] resizeArray(transaction[] array, int newSize) {
-        transaction[] newArray = new transaction[newSize];
-        System.arraycopy(array, 0, newArray, 0, array.length);
-        return newArray;
-    }
-
-    public void getTransactionsFromDB() {
-        transactionCount = 0;
-        dbcon db = new dbcon();
-        Connection con = db.getConnection();
-        String sql = "SELECT transactionId, totalAmount, vendor, transactionDate FROM transaction WHERE vendor = ?";
-
+    /* Operation on Transaction */
+    public void showAllTransactions() {
+        String sql = "SELECT transactionid, transactiondate, totalamount, vendor FROM transaction WHERE vendor = ?";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setString(1, this.name);
 
             ResultSet rs = stmt.executeQuery();
             while (rs.next()) {
-                transaction transaction = new transaction();
-                transaction.setTransactionId(rs.getInt("transactionId"));
-                transaction.setTotalAmount(rs.getDouble("totalAmount"));
-                transaction.setVendor(rs.getString("vendor"));
-                transaction.setTransactionDate(rs.getDate("transactionDate"));
-
-                // Fetch shares for this transaction
-                getSharesFromDB(transaction);
-
-                if (transactionCount == transactions.length) {
-                    transactions = resizeArray(transactions, transactions.length * 2);
-                }
-                transactions[transactionCount++] = transaction;
+                transaction ntransaction = new transaction();
+                ntransaction.setTransactionId(rs.getInt("transactionid"));
+                ntransaction.setTotalAmount(rs.getFloat("totalamount"));
+                ntransaction.setVendor(rs.getString("vendor"));
+                ntransaction.setTransactionDate(rs.getDate("transactiondate"));
+                getSharesFromDB(ntransaction);
+                System.out.println(ntransaction);
             }
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            db.closecon();
         }
     }
 
-    private void getSharesFromDB(transaction transaction) {
-        dbcon db = new dbcon();
-        Connection con = db.getConnection();
+    private void getSharesFromDB(transaction ntransaction) {
         String sql = "SELECT billid, amount FROM share WHERE transactionid = ?";
-
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
-            stmt.setInt(1, transaction.getTransactionId());
+            stmt.setInt(1, ntransaction.getTransactionId());
 
             ResultSet rs = stmt.executeQuery();
-            List<share> shares = new ArrayList<>();
+            ;
             while (rs.next()) {
                 int billId = rs.getInt("billid");
                 float amount = rs.getFloat("amount");
-                share share = new share(billId, amount);
-                shares.add(share);
+                ntransaction.addShare(billId, amount);
+
             }
-            transaction.setShares(shares.toArray(new share[0]));
+
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            db.closecon();
         }
     }
 
-    // Method to add a transaction
-    public void addTransaction(transaction newTransaction) {
-        dbcon db = new dbcon();
-        Connection con = db.getConnection();
+    public void addTransaction(transaction ntransaction) {
         String sql = "INSERT INTO transaction (totalAmount, vendor, transactionDate) VALUES (?, ?, ?)";
         String generatedColumns[] = { "transactionId" };
-
         try (PreparedStatement stmt = con.prepareStatement(sql, generatedColumns)) {
-            stmt.setDouble(1, newTransaction.getTotalAmount());
+            stmt.setDouble(1, ntransaction.getTotalAmount());
             stmt.setString(2, this.name);
-            stmt.setDate(3, new java.sql.Date(newTransaction.getTransactionDate().getTime()));
+            stmt.setDate(3, new java.sql.Date(ntransaction.getTransactionDate().getTime()));
             stmt.executeUpdate();
 
             ResultSet rs = stmt.getGeneratedKeys();
             if (rs.next()) {
                 int transactionId = rs.getInt(1);
-                newTransaction.setTransactionId(transactionId);
+                ntransaction.setTransactionId(transactionId);
             }
 
-            // Insert shares into share table
-            insertShare(newTransaction, con);
+            insertShare(ntransaction);
 
         } catch (SQLException e) {
             e.printStackTrace();
-        } finally {
-            db.closecon();
         }
-
-        if (transactionCount == transactions.length) {
-            transactions = resizeArray(transactions, transactionCount * 2);
-        }
-        transactions[transactionCount++] = newTransaction;
     }
 
-    public void removeTransaction(int transactionId) {
-        dbcon db = new dbcon();
-        Connection con = db.getConnection();
-        String sql = "DELETE FROM transaction WHERE transactionId = ? AND vendor = ?";
-
-        try (PreparedStatement stmt = con.prepareStatement(sql)) {
-            stmt.setInt(1, transactionId);
-            stmt.setString(2, this.name);
-            int affectedRows = stmt.executeUpdate();
-
-            if (affectedRows > 0) {
-                // Retrieve the shares associated with this transaction
-                sql = "SELECT billid, amount FROM share WHERE transactionid = ?";
-                try (PreparedStatement selectStmt = con.prepareStatement(sql)) {
-                    selectStmt.setInt(1, transactionId);
-                    ResultSet rs = selectStmt.executeQuery();
-
-                    // Iterate through each share and update the bill's pending amount
-                    while (rs.next()) {
-                        int billId = rs.getInt("billid");
-                        float amount = rs.getFloat("amount");
-
-                        // Update the bill's pending amount
-                        sql = "UPDATE bill SET pendingamount = pendingamount + ? WHERE billid = ?";
-                        try (PreparedStatement updateStmt = con.prepareStatement(sql)) {
-                            updateStmt.setFloat(1, amount);
-                            updateStmt.setInt(2, billId);
-                            updateStmt.executeUpdate();
-                        } catch (SQLException ex) {
-                            ex.printStackTrace();
-                        }
-                    }
-                } catch (SQLException e) {
-                    e.printStackTrace();
-                }
-
-                // Delete shares associated with this transaction
-                sql = "DELETE FROM share WHERE transactionid = ?";
-                try (PreparedStatement deleteStmt = con.prepareStatement(sql)) {
-                    deleteStmt.setInt(1, transactionId);
-                    deleteStmt.executeUpdate();
-                } catch (SQLException ex) {
-                    ex.printStackTrace();
-                }
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            db.closecon();
-        }
-        getTransactionsFromDB();
-        getBillsFromDB();
-    }
-
-    private void insertShare(transaction newTransaction, Connection con) throws SQLException {
+    private void insertShare(transaction ntransaction) throws SQLException {
         String sql = "INSERT INTO share (billid, transactionid, amount) VALUES (?, ?, ?)";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
-            share[] s = newTransaction.getShares();
-            int sharecnt=newTransaction.shareCount;
-            for (int i=0;i<sharecnt;i++) {
+            share[] s = ntransaction.getShares();
+            int sharecnt = ntransaction.shareCount;
+            for (int i = 0; i < sharecnt; i++) {
                 stmt.setInt(1, s[i].getBillId());
-                stmt.setInt(2, newTransaction.getTransactionId());
+                stmt.setInt(2, ntransaction.getTransactionId());
                 stmt.setFloat(3, s[i].getAmount());
                 stmt.executeUpdate();
 
@@ -409,65 +293,112 @@ public class vendor {
                 }
             }
         }
-        getBillsFromDB();
+
     }
 
-    public void showAllTransactions() {
-        System.out.println("All Transactions for Vendor: " + this.name);
-        for (int i = 0; i < transactionCount; i++) {
-            System.out.println(transactions[i]);
-        }
-    }
+    public void removeTransaction(int transactionId) {
+        String sql = "DELETE FROM transaction WHERE transactionId = ? AND vendor = ?";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, transactionId);
+            stmt.setString(2, this.name);
+            int affectedRows = stmt.executeUpdate();
 
-    public void showAllTransactions(Date sdate, Date edate) {
-        System.out.println("Transactions for Vendor: " + this.name);
-        for (int i = 0; i < transactionCount; i++) {
-            transaction txn = transactions[i];
-            Date txnDate = txn.getTransactionDate();
-            if (txnDate.compareTo(sdate) >= 0 && txnDate.compareTo(edate) <= 0) {
-                System.out.println(txn);
+            if (affectedRows > 0) {
+                sql = "SELECT billid, amount FROM share WHERE transactionid = ?";
+                try (PreparedStatement selectStmt = con.prepareStatement(sql)) {
+                    selectStmt.setInt(1, transactionId);
+                    ResultSet rs = selectStmt.executeQuery();
+
+                    while (rs.next()) {
+                        int billId = rs.getInt("billid");
+                        float amount = rs.getFloat("amount");
+
+                        sql = "UPDATE bill SET pendingamount = pendingamount + ? WHERE billid = ?";
+                        try (PreparedStatement updateStmt = con.prepareStatement(sql)) {
+                            updateStmt.setFloat(1, amount);
+                            updateStmt.setInt(2, billId);
+                            updateStmt.executeUpdate();
+                        }
+                    }
+
+                    sql = "DELETE FROM share WHERE transactionid = ?";
+                    try (PreparedStatement deleteShareStmt = con.prepareStatement(sql)) {
+                        deleteShareStmt.setInt(1, transactionId);
+                        deleteShareStmt.executeUpdate();
+                    }
+                }
             }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        updatePendingAmount();
+    }
+
+    // Function to show transactions by date range for all vendors
+    public void showAllTransactions(Date sdate, Date edate) {
+        String sql = "SELECT transactionId, totalAmount, vendor, transactionDate FROM transaction WHERE vendor = ? AND transactionDate BETWEEN ? AND ?";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setString(1, this.name);
+            stmt.setDate(2, sdate);
+            stmt.setDate(3, edate);
+
+            ResultSet rs = stmt.executeQuery();
+            while (rs.next()) {
+                transaction ntransaction = new transaction();
+                ntransaction.setTransactionId(rs.getInt("transactionId"));
+                ntransaction.setTotalAmount(rs.getDouble("totalAmount"));
+                ntransaction.setVendor(rs.getString("vendor"));
+                ntransaction.setTransactionDate(rs.getDate("transactionDate"));
+                getSharesFromDB(ntransaction);
+                System.out.println(ntransaction);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
         }
     }
 
+    // Function to show transactions of previous month for all vendors
     public void showAllTransactionsPMonth() {
-        // Calculate the date range for the previous month
-        Calendar calendar = Calendar.getInstance();
-        calendar.add(Calendar.MONTH, -1);
-        calendar.set(Calendar.DAY_OF_MONTH, 1);
-        Date sdate = new Date(calendar.getTimeInMillis());
+        String sql = "SELECT transactionId, totalAmount, vendor, transactionDate FROM transaction WHERE vendor = ? AND MONTH(transactionDate) = MONTH(CURRENT_DATE - INTERVAL 1 MONTH) AND YEAR(transactionDate) = YEAR(CURRENT_DATE - INTERVAL 1 MONTH)";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setString(1, this.name);
 
-        calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH));
-        Date edate = new Date(calendar.getTimeInMillis());
-
-        // Call the method to show transactions by date range
-        showAllTransactions(sdate, edate);
+            ResultSet rs = stmt.executeQuery();
+            while (rs.next()) {
+                transaction ntransaction = new transaction();
+                ntransaction.setTransactionId(rs.getInt("transactionId"));
+                ntransaction.setTotalAmount(rs.getDouble("totalAmount"));
+                ntransaction.setVendor(rs.getString("vendor"));
+                ntransaction.setTransactionDate(rs.getDate("transactionDate"));
+                getSharesFromDB(ntransaction);
+                System.out.println(ntransaction);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
     }
 
     public void menu() {
         Scanner in = new Scanner(System.in);
-        boolean loop = true;
-        while (loop) {
-            System.out.println("\nEnter the number to perform a vendor operation:");
-            System.out.println("1) View bills for vendor: " + this.name);
-            System.out.println("2) Add a new bill for vendor: " + this.name);
-            System.out.println("3) Delete a bill");
-            System.out.println("4) View pending bills for vendor: " + this.name);
-            System.out.println("5) Add a new transaction for vendor: " + this.name);
-            System.out.println("6) Remove a transaction");
-            System.out.println("7) Return to main menu");
-            System.out.println("8) Show all transactions");
-            System.out.println("9) Show transactions between two dates");
-            System.out.println("10) Show transactions for the previous month");
-    
+        int choice = 0;
 
-            int ch = in.nextInt();
-            switch (ch) {
+        do {
+            System.out.println("\nVendor Menu");
+            System.out.println("1. Display Bills");
+            System.out.println("2. Add Bill");
+            System.out.println("3. Delete Bill");
+            System.out.println("4. Display All Transactions");
+            System.out.println("5. Add Transaction");
+            System.out.println("6. Remove Transaction");
+            System.out.println("7. Display Transactions within a Date Range");
+            System.out.println("8. Display Previous Month's Transactions");
+            System.out.println("9. Exit");
+            System.out.print("Enter your choice: ");
+            choice = in.nextInt();
+
+            switch (choice) {
                 case 1:
-                    System.out.println("\nBills for Vendor: " + this.name);
-                    for (int i = 0; i < billCount; i++) {
-                        System.out.println(bills[i]);
-                    }
+                    displayBills();
                     break;
                 case 2:
                     System.out.println("Enter bill details:");
@@ -479,31 +410,23 @@ public class vendor {
 
                     Date billDate = Date.valueOf(dateStr);
 
-                    bill newBill = new bill();
-                    newBill.setAmount(amount);
-                    newBill.setPendingAmount(pendingAmount);
-                    newBill.setBillDate(billDate);
-                    newBill.setVendor(this.name);
+                    bill nbill = new bill();
+                    nbill.setAmount(amount);
+                    nbill.setPendingAmount(pendingAmount);
+                    nbill.setBillDate(billDate);
+                    nbill.setVendor(this.name);
 
-                    addBill(newBill);
+                    addBill(nbill);
 
                     System.out.println("Bill added successfully.");
                     break;
                 case 3:
-                    System.out.print("Enter bill id to delete: ");
+                    System.out.print("Enter Bill ID to delete: ");
                     int billId = in.nextInt();
-
                     deleteBill(billId);
-
-                    System.out.println("Bill with id " + billId + " deleted successfully.");
                     break;
                 case 4:
-                    System.out.println("Pending Bills for Vendor: " + this.name );
-                    for (int i = 0; i < billCount; i++) {
-                        if (bills[i].getPendingAmount() > 0) {
-                            System.out.println(bills[i]);
-                        }
-                    }
+                    showAllTransactions();
                     break;
                 case 5:
                     System.out.println("Enter transaction details:");
@@ -513,7 +436,7 @@ public class vendor {
 
                     java.sql.Date transactionDate = java.sql.Date.valueOf(dateStr);
 
-                    transaction newTransaction = new transaction();
+                    transaction ntransaction = new transaction();
                     System.out.println("Enter number of bills to be added: ");
                     int count = in.nextInt();
                     for (int i = 0; i < count; i++) {
@@ -521,54 +444,46 @@ public class vendor {
                         int id = in.nextInt();
                         System.out.print("Enter bill amount: ");
                         float amountShare = in.nextFloat();
-                        newTransaction.addShare(id, amountShare);
+                        ntransaction.addShare(id, amountShare);
                     }
-                    newTransaction.setVendor(name);
-                    newTransaction.setTransactionDate(transactionDate);
-                    addTransaction(newTransaction);
+                    ntransaction.setVendor(name);
+                    ntransaction.setTransactionDate(transactionDate);
+                    addTransaction(ntransaction);
 
                     System.out.println("Transaction added successfully.");
                     break;
                 case 6:
-                    System.out.print("Enter transaction ID to remove: ");
-                    int transId = in.nextInt();
-                    removeTransaction(transId);
-                    System.out.println("Transaction with ID " + transId + " removed successfully.");
+                    System.out.print("Enter Transaction ID to remove: ");
+                    int transactionId = in.nextInt();
+                    removeTransaction(transactionId);
                     break;
                 case 7:
-                    loop = false;
-                    System.out.println("Returned to main menu");
-                    break;
-                case 8:
-                    showAllTransactions();
-                    break;
-                case 9:
-                    System.out.print("Enter start date (YYYY-MM-DD): ");
+                    System.out.print("Enter start date (yyyy-mm-dd): ");
                     String startDateStr = in.next();
-                    System.out.print("Enter end date (YYYY-MM-DD): ");
+                    System.out.print("Enter end date (yyyy-mm-dd): ");
                     String endDateStr = in.next();
 
                     try {
-                        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
-                        Date sdate = new Date(dateFormat.parse(startDateStr).getTime());
-                        Date edate = new Date(dateFormat.parse(endDateStr).getTime());
-
-                        showAllTransactions(sdate, edate);
+                        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd");
+                        Date startDate = new Date(format.parse(startDateStr).getTime());
+                        Date endDate = new Date(format.parse(endDateStr).getTime());
+                        showAllTransactions(startDate, endDate);
                     } catch (ParseException e) {
-                        System.out.println("Invalid date format. Please use YYYY-MM-DD.");
+                        e.printStackTrace();
                     }
                     break;
-                case 10:
+                case 8:
                     showAllTransactionsPMonth();
                     break;
-
+                case 9:
+                    System.out.println("Exiting Vendor Menu...");
+                    break;
                 default:
-                    System.out.println("Invalid ch. Please enter a number between 1 and 7.");
+                    System.out.println("Invalid choice. Please enter a valid option.");
                     break;
             }
-        }
+        } while (choice != 9);
+
         in.close();
     }
-
-
 }

@@ -1,6 +1,5 @@
 package com.store;
 
-import java.util.Arrays;
 import java.util.Date;
 
 public class transaction {
@@ -15,7 +14,7 @@ public class transaction {
     public transaction() {
         shares = new share[10];
         shareCount = 0;
-        totalAmount = 0.0;
+
     }
 
     // Getters and Setters
@@ -57,25 +56,19 @@ public class transaction {
 
     @Override
     public String toString() {
-        return "transaction{" +
-                "transactionId=" + transactionId +
+        String ret = "transactionId=" + transactionId +
                 ", totalAmount=" + totalAmount +
                 ", vendor='" + vendor + '\'' +
                 ", transactionDate=" + transactionDate +
-                ", shares=" + Arrays.toString(shares) +
-                '}';
+                ", shares=";
+        for (int i = 0; i < shareCount; i++) {
+            ret = ret + shares[i];
+        }
+        return ret;
     }
 
     public void setShares(share[] shares) {
         this.shares = shares;
-        recalculateTotalAmount();
-    }
-
-    public void addShare(share nshare) {
-        if (shareCount == shares.length) {
-            shares = resizeArray(shares, shares.length * 2);
-        }
-        shares[shareCount++] = nshare;
         recalculateTotalAmount();
     }
 
